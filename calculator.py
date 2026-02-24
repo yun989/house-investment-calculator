@@ -90,8 +90,9 @@ def calculate_investment(
         # 如果月供 < 租金, Renter 必須從股市/現金中支付超出的租金
         diff = mortgage_pay - current_rent
         if invest_difference:
-            # If diff is negative (rent > mortgage), draw from portfolio; floor at 0
-            stock_portfolio = max(0.0, stock_portfolio + diff)
+            # diff > 0: 月供 > 租金，多餘的錢投入股市
+            # diff < 0: 月供 < 租金，從股市賣出補足租金（可能使組合下降）
+            stock_portfolio += diff
         else:
             cash_savings += diff
 
