@@ -70,6 +70,7 @@ def calculate_investment(
     total_rent_paid = 0
     current_rent = rent_initial
     cash_savings = 0 # 用於存放未投入股市的差額
+    remaining_principal = loan_amount
     
     # 逐月追蹤列表
     monthly_mortgage_payments = []   # 每月房貸金額
@@ -84,8 +85,19 @@ def calculate_investment(
         # 1. 房貸支出
         if month <= grace_months:
             mortgage_pay = loan_amount * monthly_mortgage_rate
+            principal_pay = 0
         else:
             mortgage_pay = post_grace_payment
+            if monthly_mortgage_rate > 0:
+                interest_pay = remaining_principal * monthly_mortgage_rate
+                principal_pay = mortgage_pay - interest_pay
+            else:
+                principal_pay = mortgage_pay
+        
+        remaining_principal -= principal_pay
+        if remaining_principal < 0:
+            remaining_principal = 0
+
         total_mortgage_paid += mortgage_pay
         monthly_mortgage_payments.append(mortgage_pay)
         
@@ -110,15 +122,15 @@ def calculate_investment(
         # 5. 逐月房屋價值更新
         current_house_value *= (1 + monthly_house_growth)
         
-        # 6. 記錄逐月淨資產
-        monthly_buy_net_worths.append(current_house_value)
+        # 6. 記錄逐月淨資產 (房屋現值 - 剩餘未還本金)
+        monthly_buy_net_worths.append(current_house_value - remaining_principal)
         monthly_rent_net_worths.append(stock_portfolio + cash_savings)
 
     # 期末房屋價值
     final_house_value = house_price_initial * ((1 + house_growth_rate) ** mortgage_years)
     
     # 最終清算
-    buy_net_worth = final_house_value
+    buy_net_worth = final_house_value - remaining_principal
     buy_total_spent = down_payment + total_mortgage_paid
     
     rent_net_worth = stock_portfolio + cash_savings
