@@ -30,7 +30,7 @@ def calculate_investment(
     """
     # --- Input Validation ---
     assert loan_amount > 0, "貸款金額必須大於 0"
-    assert down_payment >= 0, "頭期款不可為負數"
+    assert down_payment <= loan_amount, "頭期款不能大於貸款總額 (即自備款比例需至少 50%)"
     assert 0 <= mortgage_rate <= 1, "年化房貸利率應介於 0 和 1 之間"
     assert 0 <= stock_return_rate <= 5, "股市年化報酬率應介於 0 和 500% 之間"
     assert mortgage_years > 0, "貸款年限必須大於 0"
@@ -61,12 +61,23 @@ def calculate_investment(
     # (1 + r_monthly)^12 = 1 + r_annual => r_monthly = (1 + r_annual)^(1/12) - 1
     monthly_stock_return = (1 + stock_return_rate) ** (1/12) - 1
     
+    # 房價月化成長率 (幾何平均)
+    monthly_house_growth = (1 + house_growth_rate) ** (1/12) - 1
+    
     # 初始化追蹤變數
     stock_portfolio = down_payment
     total_mortgage_paid = 0
     total_rent_paid = 0
     current_rent = rent_initial
     cash_savings = 0 # 用於存放未投入股市的差額
+    
+    # 逐月追蹤列表
+    monthly_mortgage_payments = []   # 每月房貸金額
+    monthly_rents = []              # 每月租金
+    monthly_buy_net_worths = []     # 買房端逐月淨資產
+    monthly_rent_net_worths = []    # 租屋端逐月淨資產
+    monthly_stock_investments = []  # 每月投入股市的金額
+    current_house_value = house_price_initial
     
     # 逐月演進
     for month in range(1, total_months + 1):
@@ -76,25 +87,32 @@ def calculate_investment(
         else:
             mortgage_pay = post_grace_payment
         total_mortgage_paid += mortgage_pay
+        monthly_mortgage_payments.append(mortgage_pay)
         
         # 2. 租屋支出 (每年調整一次)
         if month > 1 and (month - 1) % 12 == 0:
             current_rent *= (1 + rent_growth_rate)
         total_rent_paid += current_rent
+        monthly_rents.append(current_rent)
         
         # 3. 租房端投資成長
         stock_portfolio *= (1 + monthly_stock_return)
         
         # 4. 投入差額 (買房月供 - 當月租金)
-        # 如果月供 > 租金, Renter 把多出的錢投進股市
-        # 如果月供 < 租金, Renter 必須從股市/現金中支付超出的租金
         diff = mortgage_pay - current_rent
         if invest_difference:
-            # diff > 0: 月供 > 租金，多餘的錢投入股市
-            # diff < 0: 月供 < 租金，從股市賣出補足租金（可能使組合下降）
             stock_portfolio += diff
+            monthly_stock_investments.append(diff)
         else:
             cash_savings += diff
+            monthly_stock_investments.append(0)
+        
+        # 5. 逐月房屋價值更新
+        current_house_value *= (1 + monthly_house_growth)
+        
+        # 6. 記錄逐月淨資產
+        monthly_buy_net_worths.append(current_house_value)
+        monthly_rent_net_worths.append(stock_portfolio + cash_savings)
 
     # 期末房屋價值
     final_house_value = house_price_initial * ((1 + house_growth_rate) ** mortgage_years)
@@ -125,7 +143,15 @@ def calculate_investment(
         "final_stock_portfolio": stock_portfolio,
         "cash_savings": cash_savings,
         "grace_monthly_pay": loan_amount * monthly_mortgage_rate if grace_months > 0 else 0,
-        "post_grace_monthly_pay": post_grace_payment
+        "post_grace_monthly_pay": post_grace_payment,
+        # 逐月資料
+        "monthly_mortgage_payments": monthly_mortgage_payments,
+        "monthly_rents": monthly_rents,
+        "monthly_buy_net_worths": monthly_buy_net_worths,
+        "monthly_rent_net_worths": monthly_rent_net_worths,
+        "monthly_stock_investments": monthly_stock_investments,
+        "total_months": total_months,
+        "grace_months": grace_months,
     }
 
 def fmt(num):
@@ -145,12 +171,35 @@ def print_dashboard(res):
     print(f"|  股市回報：{res['stock_return_rate']*100:>12.2f} %/y │ 投資差額：{'是' if res['invest_difference'] else '否'}")
     print("-" * SEPARATOR_WIDTH)
     
-    # 月供資訊
+    # ── 每月房貸還款金額 ──
+    print(f"| 【每月房貸還款金額】")
     if res['grace_period_years'] > 0:
-        print(f"|  寬限期月付 (利息)： {fmt(res['grace_monthly_pay'])} 元")
-        print(f"|  寬限期後月付 (本息)： {fmt(res['post_grace_monthly_pay'])} 元")
+        print(f"|  ┌─ 寬限期 (第 1 ~ {res['grace_months']} 個月) ─────────────")
+        print(f"|  │  月付金額 (僅利息)：{fmt(res['grace_monthly_pay']):>12} 元")
+        print(f"|  └─ 寬限期後 (第 {res['grace_months']+1} ~ {res['total_months']} 個月) ──────")
+        print(f"|     月付金額 (本息均攤)：{fmt(res['post_grace_monthly_pay']):>10} 元")
     else:
-        print(f"|  每月還款額 (本息平均)： {fmt(res['post_grace_monthly_pay'])} 元")
+        print(f"|  每月還款額 (本息平均攤還)：{fmt(res['post_grace_monthly_pay'])} 元")
+    print("-" * SEPARATOR_WIDTH)
+    
+    # ── 每月租金變化量 ──
+    print(f"| 【每月租金變化】")
+    monthly_rents = res['monthly_rents']
+    total_months = res['total_months']
+    mortgage_years = res['mortgage_years']
+    # 按年顯示租金 (顯示每年第一個月的租金)
+    for year in range(int(mortgage_years)):
+        month_idx = year * 12  # 該年第一個月的 index
+        if month_idx < len(monthly_rents):
+            rent_val = monthly_rents[month_idx]
+            if year == 0:
+                print(f"|  第 {year+1:>2} 年：{fmt(rent_val):>10} 元/月")
+            else:
+                prev_rent = monthly_rents[(year-1) * 12]
+                change = rent_val - prev_rent
+                change_pct = (change / prev_rent) * 100 if prev_rent != 0 else 0
+                sign = "+" if change >= 0 else ""
+                print(f"|  第 {year+1:>2} 年：{fmt(rent_val):>10} 元/月  ({sign}{fmt(change)} 元, {sign}{change_pct:.1f}%)")
     print("-" * SEPARATOR_WIDTH)
 
     # 買房結果
