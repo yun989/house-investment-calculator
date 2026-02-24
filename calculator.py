@@ -1,6 +1,5 @@
 import argparse
 import sys
-import math
 
 # Ensure UTF-8 output for Windows console to support Chinese characters
 if sys.stdout.encoding != 'utf-8':
@@ -10,6 +9,8 @@ if sys.stdout.encoding != 'utf-8':
         # Fallback for Python versions < 3.7
         import codecs
         sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+
+SEPARATOR_WIDTH = 60
 
 def calculate_investment(
     loan_amount,
@@ -27,6 +28,13 @@ def calculate_investment(
     Core calculation logic for Mortgage vs Renting & Investing.
     Includes Taiwan Bank (Bank of Taiwan) style grace period and amortization.
     """
+    # --- Input Validation ---
+    assert loan_amount > 0, "貸款金額必須大於 0"
+    assert down_payment >= 0, "頭期款不可為負數"
+    assert 0 <= mortgage_rate <= 1, "年化房貸利率應介於 0 和 1 之間"
+    assert 0 <= stock_return_rate <= 5, "股市年化報酬率應介於 0 和 500% 之間"
+    assert mortgage_years > 0, "貸款年限必須大於 0"
+    assert grace_period_years < mortgage_years, "寬限期年數必須小於貸款年限"
     house_price_initial = loan_amount + down_payment
     monthly_mortgage_rate = mortgage_rate / 12
     total_months = int(mortgage_years * 12)
@@ -82,7 +90,8 @@ def calculate_investment(
         # 如果月供 < 租金, Renter 必須從股市/現金中支付超出的租金
         diff = mortgage_pay - current_rent
         if invest_difference:
-            stock_portfolio += diff
+            # If diff is negative (rent > mortgage), draw from portfolio; floor at 0
+            stock_portfolio = max(0.0, stock_portfolio + diff)
         else:
             cash_savings += diff
 
@@ -106,6 +115,7 @@ def calculate_investment(
         "rent_initial": rent_initial,
         "rent_growth_rate": rent_growth_rate,
         "stock_return_rate": stock_return_rate,
+        "invest_difference": invest_difference,
         "buy_net_worth": buy_net_worth,
         "buy_total_spent": buy_total_spent,
         "total_mortgage_paid": total_mortgage_paid,
@@ -121,9 +131,9 @@ def fmt(num):
     return f"{num:,.0f}"
 
 def print_dashboard(res):
-    print("\n" + "="*60)
+    print("\n" + "="*SEPARATOR_WIDTH)
     print("        住宅決策分析儀：買房勝？還是租屋投資勝？        ")
-    print("="*60)
+    print("="*SEPARATOR_WIDTH)
     
     # 輸入參數區
     print(f"| 【基本條件】")
@@ -131,8 +141,8 @@ def print_dashboard(res):
     print(f"|  自備頭期：{fmt(res['down_payment']):>12} 元 │ 寬限期  ：{res['grace_period_years']:>2} 年")
     print(f"|  房貸利率：{res['mortgage_rate']*100:>12.2f} %  │ 房價成長：{res['house_growth_rate']*100:>2.1f} %/y")
     print(f"|  初始月租：{fmt(res['rent_initial']):>12} 元 │ 租金成長：{res['rent_growth_rate']*100:>2.1f} %/y")
-    print(f"|  股市回報：{res['stock_return_rate']*100:>12.2f} %/y │ 投資差額：{'是' if res['cash_savings']==0 else '否'}")
-    print("-" * 60)
+    print(f"|  股市回報：{res['stock_return_rate']*100:>12.2f} %/y │ 投資差額：{'是' if res['invest_difference'] else '否'}")
+    print("-" * SEPARATOR_WIDTH)
     
     # 月供資訊
     if res['grace_period_years'] > 0:
@@ -140,14 +150,14 @@ def print_dashboard(res):
         print(f"|  寬限期後月付 (本息)： {fmt(res['post_grace_monthly_pay'])} 元")
     else:
         print(f"|  每月還款額 (本息平均)： {fmt(res['post_grace_monthly_pay'])} 元")
-    print("-" * 60)
+    print("-" * SEPARATOR_WIDTH)
 
     # 買房結果
     print(f"| 【買房情境 - {res['mortgage_years']} 年後】")
     print(f"|  累積總支出(含頭期)： {fmt(res['buy_total_spent']):>15} 元")
     print(f"|  期末預估房屋價值  ： {fmt(res['buy_net_worth']):>15} 元")
     print(f"|  ● 買房端最終淨資產： {fmt(res['buy_net_worth']):>15} 元")
-    print("-" * 60)
+    print("-" * SEPARATOR_WIDTH)
 
     # 租屋結果
     print(f"| 【租屋投資情境 - {res['mortgage_years']} 年後】")
@@ -158,7 +168,7 @@ def print_dashboard(res):
     print(f"|  ● 租房端最終淨資產： {fmt(res['rent_net_worth']):>15} 元")
 
     # 最終對決
-    print("=" * 60)
+    print("=" * SEPARATOR_WIDTH)
     diff = res['buy_net_worth'] - res['rent_net_worth']
     if diff > 0:
         print(f" RESULT: 🚀 【買房勝出】 期末淨資產多出 {fmt(diff)} 元")
@@ -168,16 +178,21 @@ def print_dashboard(res):
         winner_comment = "股市的高年化報酬率結合複利效應，抵銷了租金成本並超越房產增值。"
     
     print(f" 註解: {winner_comment}")
-    print("=" * 60)
+    print("=" * SEPARATOR_WIDTH)
     print(" *註1: 台灣銀行算法通常採用『每月本息平均攤還』。")
     print(" *註2: 寬限期內僅繳納利息，本金延後至剩餘年度攤還，會增加總支出。")
     print(" *註3: 本計算未考量房屋稅、地價稅、維護成本及房屋折舊。")
-    print("=" * 60 + "\n")
+    print("=" * SEPARATOR_WIDTH + "\n")
 
 def str2bool(v):
     if v is None: return False
     if isinstance(v, bool): return v
-    return str(v).lower() in ('yes', 'true', 't', 'y', '1')
+    if str(v).lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif str(v).lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError(f"布林值預期為 yes/no，收到: '{v}'")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='買房 vs 租房投資股市 決策計算機 (台灣銀行算法預設)')
