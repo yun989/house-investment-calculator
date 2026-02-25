@@ -13,7 +13,9 @@ st.sidebar.header("⚙️ 設定參數")
 
 st.sidebar.subheader("房貸相關")
 loan_amount = st.sidebar.number_input("貸款金額 (元)", value=12000000, step=100000)
+st.sidebar.caption(f"= {loan_amount:,.0f} 元")
 down_payment = st.sidebar.number_input("頭期款金額 (元)", value=3000000, step=100000)
+st.sidebar.caption(f"= {down_payment:,.0f} 元")
 mortgage_years = st.sidebar.number_input("貸款年限 (年)", value=30, step=1)
 grace_period_years = st.sidebar.number_input("寬限期 (年)", value=0, step=1)
 mortgage_rate = st.sidebar.number_input("年化房貸利率 (%)", value=2.5, step=0.1) / 100
@@ -21,6 +23,7 @@ house_growth_rate = st.sidebar.number_input("房價預估年化成長率 (%)", v
 
 st.sidebar.subheader("租屋及投資相關")
 rent_initial = st.sidebar.number_input("初始每月租金 (元)", value=27000, step=1000)
+st.sidebar.caption(f"= {rent_initial:,.0f} 元")
 rent_growth_rate = st.sidebar.number_input("租金預估年成長率 (%)", value=2.0, step=0.5) / 100
 stock_return_rate = st.sidebar.number_input("股市預估年化報酬率 (%)", value=10.0, step=0.5) / 100
 invest_difference = st.sidebar.checkbox("將買房與租屋的差額投入股市", value=True, help="如果勾選，代表每個月買房要繳的錢扣掉租金後，剩下的錢都會拿去買股票。")
